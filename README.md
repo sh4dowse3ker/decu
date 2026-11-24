@@ -1,72 +1,67 @@
-<!-- AUTO-ACTUALIZADO: último informe publicado el 2026-11-24 19:09 UTC -->
-> **Último informe:** [`informes/2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md`](informes/2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md) · *Actualizado: 2026-11-24 19:09 UTC*
+<!-- AUTO-ACTUALIZADO: último informe publicado el 2026-11-24 19:52 UTC -->
+> **Último informe:** [`informes/2026-11-24_1952_busqueda_estrategias_ortogonales_7_rondas.md`](informes/2026-11-24_1952_busqueda_estrategias_ortogonales_7_rondas.md) · *Actualizado: 2026-11-24 19:52 UTC*
 
-# Laboratorio Cuantitativo V2: Caché Ultrarrápido, Juez Mainnet Anti-Overfitting y Monte Carlo (`80 €`)
+# Campaña de Descubrimiento Autónomo (7 Rondas · >16.130 Hipótesis): ¿Existe Otra Estrategia Rentable en Solana Mainnet Aparte de `Alpha Sniper`?
 
 **Fecha:** 2026-11-24  
-**Alcance:** 100 % local (`decu2/laboratorio_v5/`), con paridad 1:1 respecto al simulador Mainnet Real activo en producción (`servidor`).
+**Datos:** 15 días completos (`92` segmentos reales, `39,321` snapshots causales × `54` variables, ticks reales PumpSwap).  
+**Disciplina anti-overfitting:** `TRAIN 60%` → `VAL 20%` → **Holdout Temporal Ciego `20%` sellado** + evaluación final tick a tick con fricciones reales de Solana Mainnet (`+1.5s`, reverts `>3.5%`, Jito `0.0007 SOL/tx`, PumpSwap `0.30%`, `0.5%` MEV, `0.14 SOL`).
 
 ---
 
-## 1. Mejoras Implementadas en el Laboratorio V2
+## 1. Veredicto Honesto
 
-1. **Caché binario CSR (`cache_trayectorias.py`):** pre-indexa los `92` segmentos reales (`197` mints, `276,838` ticks AMM, `5.26 MB`). Acelera cada benchmark completo de **`57s` → `0.77s` (74× más rápido)** y se reconstruye automáticamente solo cuando lleguen segmentos nuevos.
-2. **Juez Mainnet + Guardián Anti-Overfitting (`juez_mainnet.py`):** usa exactamente `evaluar_fill_compra_mainnet` y `evaluar_fill_venta_mainnet` del motor vivo, evalúa **5 escenarios obligatorios** (`paper_clasico`, `mainnet_realista`, `mainnet_estricto`, `mainnet_congestion`, `mainnet_sin_ata`), separa **Holdout Temporal Ciego (último 20%)** y exige significancia bootstrap con corrección por múltiples ensayos.
-3. **Simulador Monte Carlo (`montecarlo_cuenta.py`):** 10.000 caminos vectorizados para cuenta pequeña (`80 € = 1.25 SOL`, horizonte 30 días), comparando tamaño fijo (`0.08–0.18 SOL`) vs compuesto (`12%–15%`).
-4. **Verificador de Deriva Vivo vs Lab (`auditor_deriva_vivo.py`):** lee `servidor` (solo lectura, `DECU2_NO_TELEGRAM=1`) y compara las operaciones cerradas tras el corte Mainnet Real (`2026-11-24 18:58 UTC`: op `#46+` V4.6 / `#4+` V5.0) contra el laboratorio.
-5. **CLI unificado (`python -m decu2.laboratorio_v5.cli_lab`)** y **41/41 tests unitarios en verde**.
+Tras **7 rondas y más de `16.130` hipótesis distintas** (reglas humanas, evolución genética, árboles interpretables, LightGBM regularizado, estrategias anti-fricción y pre-graduación en curva):
 
----
-
-## 2. Veredicto del Juez Mainnet (`0.14 SOL` · 15 días reales · ejecutado en `0.77s`)
-
-| Estrategia | Veredicto Guardián | Mainnet Realista (`+1.5s`, Jito, `0.5%` MEV) | Mainnet Estricto (Ley de Murphy) | Holdout Ciego (último 20% tiempo) |
-|---|---|---|---|---|
-| **V4.6 Alpha Sniper + Escudo ML** (`143` ops) | **APROBADA** | `+2.589 SOL (+166 €)`, PF `2.42x` (`nb 1.94x`), `p=0.0085`, DD `14.5%` | `+0.983 SOL (+63 €)`, PF `1.47x` (`nb 1.05x`), DD `36.8%` | **Realista `+1.292 SOL` (`PF 4.23x`) · Estricto `+1.233 SOL` (`PF 3.77x`)** |
-| **Quantum V5.0 Runner** (`75` ops) | **RECHAZADA** *(fallo holdout 15 ops)* | `+1.677 SOL (+107 €)`, PF `2.58x` (`nb 1.99x`), `p=0.0230`, DD `7.6%` | `+0.471 SOL (+30 €)`, PF `1.42x` (`nb 1.09x`), DD `21.4%` | Realista `-0.139 SOL` (`PF 0.55x`) · Estricto `-0.155 SOL` (`PF 0.52x`) |
-| **Alpha Chill (`TIPO_E`)** (`95` ops) | **RECHAZADA** | `+0.015 SOL (+1 €)`, PF `1.02x` (`nb 0.86x`), `p=0.4950` | **`-0.553 SOL (-35 €)`**, PF `0.48x` | Realista `+0.048 SOL` · Estricto `-0.025 SOL` |
-
-> **Hallazgo crítico del guardián:** el filtro `p_win >= 0.50` de V5.0 recortó ganadores grandes en el último 20% de los días (`15` ops en holdout frente a `29` de V4.6+Escudo). Las 2 semanas en vivo en modo Mainnet Real comparando ambos motores en paralelo resolverán esta diferencia con datos 100 % nuevos.
+1. **NO existe hoy en nuestros 15 días de datos on-chain otra estrategia diferente a `Alpha Sniper` que sobreviva a Solana Mainnet Real (`+1.5s`, Jito, MEV, reverts) y al Holdout Ciego (`20%`).**
+2. **Por qué casi todas las demás mueren en Mainnet aunque ganen en Paper:**
+   - **Perseguir momentum / rupturas (`S1–S4`)** ganaba `+0.58` a `+1.61 SOL` en Paper (`0s`), pero al inyectar `+1.5s` reales de bloque + `0.5%` MEV + gas Jito, el `WR` se desploma 10–12 puntos y todas entran en pérdidas o fallan en Holdout.
+   - **Bonding curve / pre-graduación (`28,347` filas, `3,008` reglas):** incluso en `v_sol >= 65–70 SOL` la tasa de rug en 180s es del **`50%–58%`** y **`PF = 0.37x–0.53x`** (`0` supervivientes).
+   - **LightGBM fuera de `Alpha Sniper`:** sacó `PF 2.44x–3.43x` en TRAIN y se hundió a **`PF 0.35x–0.65x`** en VAL (ruido puro).
+3. **El gran hallazgo real de la campaña (dentro del núcleo que SÍ tiene ventaja estructural):**
+   Combinar las **entradas de `V4.6 Alpha Sniper + Escudo ML` (`143` ops, sin recortar ganadores con `p_win >= 0.50`)** con la **salida `Runner 50% / 4h`** de V5.0 dispara el beneficio real en Mainnet **sin añadir complejidad ni sobreajuste**:
+   - **Mainnet Realista:** **`+3.702 SOL (+237 €)`**, `PF 2.93x` (`nb 1.91x`), `p = 0.0155`, **Holdout Ciego `PF 4.52x` (`+2.450 SOL`)**.
+   - **Mainnet Estricto (Ley de Murphy):** **`+2.137 SOL (+137 €)`**, `PF 1.97x` (`nb 1.08x`), **Holdout Ciego `PF 3.60x` (`+2.119 SOL`)** (**+117%** más que V4.6 clásica y **4.5×** más que V5.0).
 
 ---
 
-## 3. Monte Carlo — 10.000 Caminos para Cuenta de `80 €` (`1.25 SOL`, 30 días)
+## 2. Resumen de las 7 Rondas Ejecutadas
 
-### A) Bajo Mainnet REALISTA (`+1.5s` real + Jito + `0.5%` MEV + ATA cerrado)
-
-| Estrategia y Sizing | P5 (mala racha) | Mediana (30d) | P95 (buena racha) | P(ganar) | P(2× cuenta) | P(DD ≥ 25%) | P(quiebra <0.30 SOL) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **V4.6+Escudo · Fijo `0.10 SOL`** | `182 €` | `305 € (+225 €)` | `455 €` | `99.9%` | `97.6%` | `10.2%` | `0.01%` |
-| **V4.6+Escudo · Fijo `0.12 SOL`** | `207 €` | `355 € (+275 €)` | `535 €` | `99.9%` | `98.6%` | `14.7%` | `0.04%` |
-| **V4.6+Escudo · Fijo `0.14 SOL`** | `232 €` | `405 € (+325 €)` | `615 €` | `99.9%` | `99.1%` | `19.4%` | `0.09%` |
-| **V5.0 Runner · Fijo `0.10 SOL`** | `135 €` | `226 € (+146 €)` | `334 €` | `99.8%` | `87.5%` | `9.5%` | `0.00%` |
-| **V5.0 Runner · Fijo `0.12 SOL`** | `149 €` | `258 € (+178 €)` | `387 €` | `99.8%` | `92.6%` | `14.4%` | `0.04%` |
-| **V5.0 Runner · Fijo `0.14 SOL`** | `163 €` | `290 € (+210 €)` | `441 €` | `99.8%` | `95.3%` | `19.1%` | `0.09%` |
-
-### B) Bajo Mainnet ESTRICTO ("Ley de Murphy": nunca te favorece la latencia)
-
-| Estrategia y Sizing | P5 (mala racha) | Mediana (30d) | P95 | P(ganar) | P(DD ≥ 25%) | P(quiebra <0.30 SOL) |
-|---|---:|---:|---:|---:|---:|---:|
-| **V4.6+Escudo · Fijo `0.10 SOL`** | `53 €` | `157 € (+77 €)` | `282 €` | `89.1%` | `56.3%` | `2.47%` |
-| **V4.6+Escudo · Fijo `0.12 SOL`** | `44 €` | `178 € (+98 €)` | `328 €` | `89.6%` | `63.0%` | `3.86%` |
-| **V4.6+Escudo · Fijo `0.14 SOL`** | `19 €` | `198 € (+118 €)` | `373 €` | `89.5%` | `68.4%` | `5.62%` |
-| **V5.0 Runner · Fijo `0.10 SOL`** | `59 €` | `117 € (+37 €)` | `185 €` | `84.7%` | `41.2%` | **`0.53%`** |
-| **V5.0 Runner · Fijo `0.12 SOL`** | `57 €` | `127 € (+47 €)` | `208 €` | `86.2%` | `50.1%` | **`1.21%`** |
-| **V5.0 Runner · Fijo `0.14 SOL`** | `53 €` | `138 € (+58 €)` | `232 €` | `86.8%` | `57.2%` | `2.21%` |
-
-> **Conclusión de gestión de capital:** con `80 €`, empezar con tamaño fijo **`0.10–0.12 SOL` (`~6.5–7.5 €`)** protege mucho mejor la cuenta frente a malas rachas (`P(quiebra) < 1.2%–2.5%` incluso en Ley de Murphy). El modo compuesto (`12%`) solo conviene activarlo cuando la cuenta supere `150–200 €`.
+| Ronda | Universo y método | Hipótesis probadas | Supervivientes Mainnet + Holdout |
+|---|---|---:|---:|
+| **R1** | 10 familias humanas ortogonales en AMM (`PostMig`, `ATH Breakout`, `Squeeze`, `Phoenix`, `LiqGrowth`, `NonPump`, `Mature`, `LowTox`, `WhaleAbs`) | 120 | **0** |
+| **R2** | Árbol interpretable (`depth=3`) + LightGBM regularizado en universo `0%` Alpha Sniper (`4,104` TR / `1,716` VA) | ML + 7 umbrales | **0** (`VAL PF 0.35x–0.65x`) |
+| **R3–R4** | Búsqueda evolutiva (`2–4` condiciones limpias) + refinamiento de `Mature Trend Survivor` en `0%` Alpha Sniper | 13,000+ | **4** pasaron TR+VA (estrés 2×) → pasan a R5 |
+| **R5** | **Examen Final tick a tick en Mainnet (`+1.5s`, Jito, MEV, reverts) + Holdout Ciego** sobre las 4 finalistas | 4 × 2 salidas × 4 escenarios | **0** aprobadas (`S1–S4` fallan en Mainnet/Holdout) |
+| **R6** | 13 estrategias estructurales **anti-fricción** (dips/absorción sin perseguir velas verdes) directo en ticks reales `+1.5s` | 13 × 2 salidas | **0** aprobadas (`FE2` solo gana donde solapa 54% con Sniper) |
+| **R7** | Bonding Curve / Pre-graduación (`es_amm=0`, `v_sol` 35–70) + Whale Pool `0%` Sniper | 3,008+ | **0** (`rug 50%–58%`, `PF 0.37x–0.53x`) |
 
 ---
 
-## 4. Primer Chequeo de Deriva Vivo (`servidor`, 10 min tras activar Mainnet Real)
+## 3. Examen Final Tick a Tick en Solana Mainnet (`0.14 SOL/op`, 15 días + Holdout Ciego)
 
-El verificador `cli_lab deriva` ya confirmó la **primera operación cerrada en vivo bajo Mainnet Real** (`V4.6 op #46`):
-- Ejecutó con latencia `+1.5s`, **sufrió 1 revert real en venta**, reintentó pagando `+0.0003 SOL` extra (`gas_tx_total = 0.0017 SOL`, comisión total `0.00254 SOL`) y **ahorró `0.002039 SOL`** cerrando el ATA. Estado: `OK`.
+| Estrategia | Overlap Sniper | Paper (15d) | Mainnet Realista (`+1.5s`, Jito, `0.5%` MEV) | Mainnet Estricto (Ley de Murphy) | Holdout Ciego (20%) Realista | Veredicto |
+|---|---:|---|---|---|---|---|
+| **REF: V4.6 Sniper+Escudo (salida clásica)** | 100% | `+2.674 SOL` (PF 2.79x) | **`+2.589 SOL (+166 €)`** (PF `2.42x`, nb `1.94x`) | `+0.983 SOL (+63 €)` (PF `1.47x`) | **`+1.512 SOL` (PF `3.33x`)** | **APROBADA** |
+| **HALLAZGO: V4.6 Sniper+Escudo + Salida Runner 4h** | 100% | `+4.224 SOL` (PF 3.83x) | **`+3.702 SOL (+237 €)`** (PF **`2.93x`**, nb `1.91x`) | **`+2.137 SOL (+137 €)`** (PF **`1.97x`**) | **`+2.450 SOL` (PF `4.52x`)** | **APROBADA (MEJOR)** |
+| `S1_MATURE_SURVIVOR` (`age>=600, v_pk>=0.85, ret300>=15%`) | 38.3% | `+1.261 SOL` (PF 1.32x) | `-0.559 SOL (-36 €)` (PF `0.89x`) | `-1.735 SOL (-111 €)` (PF `0.66x`) | `-0.795 SOL` (PF `0.47x`) | **RECHAZADA** |
+| `S2_MATURE_MIDCAP_WAKE` (`age>=600, v<=250, ret60>=4%`) | 50.7% | `+0.955 SOL` (PF 1.34x) | `-0.939 SOL (-60 €)` (PF `0.77x`) | `-1.956 SOL (-125 €)` (PF `0.54x`) | `-0.906 SOL` (PF `0.44x`) | **RECHAZADA** |
+| `S3_CLEAN_TREND_REBOUND` (`ret300>=20%, reb>=6%, rug<0.30`) | 57.2% | `+1.609 SOL` (PF 1.64x) | `+0.945 SOL (+60 €)` (PF `1.36x`, `p=0.18`) | `-0.112 SOL (-7 €)` (PF `0.96x`) | `-0.191 SOL` (PF `0.71x`) | **RECHAZADA** |
+| `S4_NON_PUMP_KING` (`!is_pump, age>=450, v_pk>=0.92`) | 0.0% | `+0.576 SOL` (PF 1.44x) | `+0.161 SOL (+10 €)` (PF `1.11x`, `p=0.39`) | `+0.089 SOL (+6 €)` (PF `1.07x`) | `-0.246 SOL` (PF `0.25x`) | **RECHAZADA** |
+
+---
+
+## 4. Conclusión Práctica
+
+- **No merece la pena forzar una segunda estrategia artificial:** en memecoins de Solana con los datos on-chain actuales, la única ineficiencia que paga de sobra el peaje real de Mainnet (`+1.5s`, Jito, MEV, reverts) es el **rebote estructural post-graduación con Escudo ML (`Alpha Sniper`)**.
+- **Para encontrar una segunda estrategia genuinamente distinta** haría falta una **fuente de información distinta** (por ejemplo: *tracking de carteras "smart money" históricamente rentables en Solana* — copy-alpha filtrado por Escudo ML — que no depende del patrón de precio de `Alpha Sniper`).
+- Mientras tanto, **no tocamos producción durante las 2 semanas**; al finalizarlas, el hallazgo **`V4.6 Sniper+Escudo + Salida Runner 4h`** será el candidato nº 1 a validar para la siguiente versión.
 
 ---
 
 ## Historial de informes
 
+- [`2026-11-24_1952_busqueda_estrategias_ortogonales_7_rondas.md`](informes/2026-11-24_1952_busqueda_estrategias_ortogonales_7_rondas.md) — Campaña de Descubrimiento Autónomo (7 Rondas · >16.130 Hipótesis): ¿Existe Otra Estrategia Rentable en Solana Mainnet Aparte de `Alpha Sniper`?
 - [`2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md`](informes/2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md) — Laboratorio Cuantitativo V2: Caché Ultrarrápido, Juez Mainnet Anti-Overfitting y Monte Carlo (`80 €`)
 - [`2026-11-24_1837_auditoria_paper_vs_mainnet_real.md`](informes/2026-11-24_1837_auditoria_paper_vs_mainnet_real.md) — Auditoría Forense: Paper Trading vs Capital Real en Solana Mainnet (`60–80 €`)
 - [`2026-11-24_1824_seguimiento_alpha_sniper_y_chill.md`](informes/2026-11-24_1824_seguimiento_alpha_sniper_y_chill.md) — Seguimiento Automático (4h) · Alpha Sniper & Alpha Chill + QUANTUM V5.0
