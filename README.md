@@ -1,49 +1,92 @@
-<!-- AUTO-ACTUALIZADO: último informe publicado el 2026-11-24 13:43 UTC -->
-> **Último informe:** [`informes/2026-11-24_1343_evaluacion_estructura_bot_decu.md`](informes/2026-11-24_1343_evaluacion_estructura_bot_decu.md) · *Actualizado: 2026-11-24 13:43 UTC*
+<!-- AUTO-ACTUALIZADO: último informe publicado el 2026-11-24 13:54 UTC -->
+> **Último informe:** [`informes/2026-11-24_1354_auditoria_limpieza_y_deuda_tecnica.md`](informes/2026-11-24_1354_auditoria_limpieza_y_deuda_tecnica.md) · *Actualizado: 2026-11-24 13:54 UTC*
 
-# Auditoría y Nota Global de la Estructura Actual de DECU 2.0 (V4.6)
+# Auditoría de Limpieza de Código y Deuda Técnica Actual (DECU 2.0)
 
 **Fecha:** 2026-11-24 UTC  
-**Alcance:** Infraestructura (`servidor`), ingesta de datos, seguridad anti-rug, motor cuantitativo V4.6 (**Alpha Sniper** + **Alpha Chill**), observabilidad y preparación para dinero real.
+**Fuente:** Medición directa en el repositorio local (`/home/kiro/decu-dev/decu2-reconstruccion`) y telemetría en vivo en `servidor` (`ps`, `free -m`, `journalctl`).
 
 ---
 
-## Nota Global Honesta
+## 1. Radiografía Real del Código Hoy
 
-- **Como sistema actual de Paper Trading e I+D cuantitativo:** **8.4 / 10**
-- **Como sistema listo para operar dinero real HOY:** **7.6 / 10** *(sube a ~9.0/10 en cuanto se completen las 100 ops en vivo por estrategia, se valide la ejecución real con micro-capital vía Jito y se pode el código legado inactivo).*
+El repositorio suma **483 archivos Python (`129,491` líneas)** + **`5,241` líneas de frontend** (`decu2-ui.js`, `index.html`, `decu2.css`), ocupando **`1.5 GB`** en `servidor` (incluyendo estado/diarios).
+
+Sin embargo, **menos del 18 % del código Python está realmente trabajando para las dos estrategias activas (`Alpha Sniper` y `Alpha Chill`)**:
+
+| Bloque del código | Archivos | Líneas | % del Python | Estado real hoy |
+|---|---:|---:|---:|---|
+| **V4.6 Activo (`Alpha Sniper` + `Alpha Chill`)** | 9 | 7,851 | **6.1 %** | 🟢 Operando en vivo (y parte de V4.6 A/B/C sigue pausada dentro) |
+| **Ingesta, seguridad y servicios core** | 20 | 9,747 | **7.5 %** | 🟢 Necesario (WS, RugGuard, Bubblemaps, Jupiter, paper_servicio) |
+| **API Web + Telegram** | 6 | 4,617 | **3.6 %** | 🟢 Activo (con parches para convivir con datos heredados) |
+| **QUANTUM V4.5 (legado)** | 11 | **26,731** | **20.6 %** | 🟡 **Apagado para operar, pero SIGUE ejecutándose en cada tick** |
+| **Estrategias V3/V4 (legado)** | 25 | **9,695** | **7.5 %** | 🔴 Desactivadas (`copy_smart`, `supertrend`, `narrativas`, `mineros`, etc.) |
+| **Otros heredados (`core/` v1, exploradores, `ops/`)** | 280 | **39,952** | **30.9 %** | 🔴 Código muerto / histórico de versiones previas |
+| **Tests** | 132 | 30,898 | 23.9 % | 🟢 Suite de regresión (muchos tests de módulos ya retirados) |
+
+Archivos monolíticos más grandes:
+- `static/decu2-ui.js`: **`2,925` líneas** en un solo archivo.
+- `decu2/lanzamientos/motor_quant_alpha_v46.py`: **`1,869` líneas**.
+- `decu2/api_plataforma.py`: **`1,844` líneas**.
+- `decu2/lanzamientos/pipeline_2b.py`: **`1,543` líneas**.
+- `decu2/notificaciones/telegram.py`: **`1,170` líneas**.
 
 ---
 
-## Desglose por Pilares
+## 2. Desventajas Reales que SÍ Está Produciendo Ahora Mismo
 
-| Pilar | Nota | Puntos fuertes actuales | Qué falta para un 9.5–10 |
-|---|---:|---|---|
-| **1. Ingesta y Arquitectura en Vivo** | **8.5 / 10** | 4 servicios `systemd` desacoplados (`detector`, `paper`, `miapi`, `telegram`), diario append-only `sesion.jsonl`, multi-fuente (Helius WS con rotación automática + PumpPortal + Radar), filtro anti-glitch y `prioridad.json` para posiciones abiertas. | En dinero real, sustituir RPC gratuitos/compartidos por RPC dedicado o gRPC/Yellowstone para eliminar picos de latencia y 429 en momentos calientes. |
-| **2. Seguridad y Escudo Anti-Rug** | **8.8 / 10** | Muy superior al bot promedio de Pump.fun: autoridades nulas + Token-2022, Bubblemaps + Sybil/insiders (`>=15`), antiballenas `top1 externo < 8%` y `top10 < 50%`, **fail-closed** si cae RugCheck/Bubblemaps, **blacklist permanente en disco**, Jupiter anti-honeypot y `EARLY_EXIT_RUG` por drenaje de liquidez. | En dinero real, asegurar venta de emergencia con Jito bundle + priority fee dinámico y slippage de emergencia para que el `EARLY_EXIT_RUG` entre en el primer bloque disponible. |
-| **3. Estrategias y Rigor Cuantitativo** | **8.0 / 10** | Disciplina real: se descartaron >15 estrategias con EV negativo sin sesgo de confirmación. Costes realistas + pruebas de estrés 2x + bloques cronológicos. Hoy operan 2 estrategias complementarias e **independientes**: **Alpha Sniper V2** (`36` ops en vivo, `+0.2853 SOL`, `PF 1.55`) y **Alpha Chill** (recién desplegada). | Completar la muestra mínima de **100 operaciones en vivo** para cada estrategia por separado y confirmar que el edge sobrevive al cambio de régimen de mercado (días lentos vs días calientes). |
-| **4. Motor V4.6 y Simulación Paper** | **7.8 / 10** | 100 % stdlib puro (AST auditado), latencia sub-milisegundo (`p50 ~0.23 ms`), persistencia atómica JSON, libros `libro_d` y `libro_e` 100 % separados, huella congelada de `LimitesRiesgo` (`c7c25a41335aace7`) y `96/96` tests pasando. | Falta probar en fuego real el puente de ejecución on-chain (confirmación de tx, retries, fills parciales, slippage real vs simulado y reconciliación estricta del balance de la wallet). |
-| **5. Limpieza del Código / Deuda Técnica** | **6.5 / 10** | El punto más mejorable: el repositorio conserva mucho código legado de V3/V4/V4.5 (copy-trade, supertrend, narrativas, pesca continua) que hoy corre en solo-lectura o desactivado con `DECU2_SOLO_V46=1`, añadiendo peso cognitivo y consumo base de RAM/CPU. | Tras validar Alpha Sniper y Alpha Chill en 100 ops, aislar/archivar el motor heredado para dejar un binario/servicio ultraligero exclusivo de V4.6. |
-| **6. Observabilidad, Web, Telegram y GitHub** | **8.5 / 10** | Panel web en tiempo real con velas limpias (sin señales fantasma), tarjetas independientes para Alpha Sniper y Alpha Chill, cartera Phantom sincronizada en servidor, auditoría `X/100` desglosada, bot de Telegram con watchdog crítico y archivo automático de informes en GitHub cada 4h. | Añadir telemetría de slippage real vs estimado (fase dinero real) y panel de latencia de confirmación on-chain. |
+Estas no son teorías: son costes medidos hoy en producción (`servidor`):
+
+### A. Consumo innecesario de CPU y RAM en `decu2paper` (el mayor impacto real)
+Medición real de procesos en `servidor`:
+- `decu2paper`: **`30.9 %` CPU constante** · **`281 MB` RAM** (`7` hilos)
+- `decu2detector` (WebSockets Solana): **`9.1 %` CPU** · **`78 MB` RAM**
+- `miapi` (Web/API): `0.3 %` CPU · `50 MB` RAM
+- `decu2telegram`: `0.2 %` CPU · `32 MB` RAM
+- **Memoria del VPS (`free -m`):** `3,819 MB` totales · `3,018 MB` usados · **`419 MB` ya en Swap** · solo `801 MB` libres.
+
+**¿Por qué `decu2paper` gasta 3.5× más CPU y RAM que el propio detector WebSocket si Alpha Sniper y Alpha Chill solo hacen cálculos O(1) en `0.23 ms`?**
+Porque en cada tick de `sesion.jsonl` sigue calculando trabajo que luego se descarta:
+1. Todo `pipeline_2b.py` (`SmartMoney` con 2,783 votos SWI, `MetaBrain`, `EntryOptimizer`, `Supertrend`, `CopySmartWallet`, `PostMig`).
+2. Todo `QUANTUM V4.5` (`26,731` líneas: Hawkes, VPIN, SSM, Conformal + pesos JSON) en modo solo-lectura.
+3. Todo el motor ML de `V4.6 TIPO A/B` (42 features + 7 modelos) aunque `TIPO A`, `TIPO B` y `TIPO C` están pausados y **ni Alpha Sniper ni Alpha Chill los usan**.
+
+Un motor limpio dedicado únicamente a `Alpha Sniper` + `Alpha Chill` bajaría `decu2paper` de **`31 % CPU / 281 MB RAM`** a **~`3–5 % CPU / 40–60 MB RAM`**.
+
+### B. Riesgo de latencia (`lag`) en picos de mercado
+En momentos de máxima actividad en PumpSwap (cientos de swaps/segundo), gastar `31 %` de CPU en modelos muertos alarga la cola de lectura de `sesion.jsonl`. En **dinero real**, unos pocos cientos de milisegundos de retraso empeoran el precio de entrada y pueden hacer que un `EARLY_EXIT_RUG` llegue un bloque tarde.
+
+### C. Arranques lentos (`19 segundos` ciego al reiniciar)
+En el reinicio de hoy (`12:51:25 -> 12:51:44`), `decu2paper` tardó **19 segundos** en cargar `V4.5`, SWI y reproducir el historial heredado antes de quedar operativo. En un motor limpio solo V4.6 arrancaría en **~1–2 segundos**.
+
+### D. Bugs fantasma y contaminación visual/métrica
+- Ya produjo bugs reales: hoy mismo hubo que limpiar señales fantasma `COMPRA` de `V4.5` que se pintaban sobre la gráfica en vivo (`3GZ4G2`) aunque `V4.5` no estaba comprando.
+- Obligó a añadir lógica especial (`auditoria_paso_real`, `DECU2_SOLO_V46=1`) para que el histórico antiguo (`eventos_paper*.jsonl`, libros `A/B/C`) no contamine los contadores de `Alpha Sniper` y `Alpha Chill`.
+
+### E. Velocidad de desarrollo y riesgo al tocar código
+Para añadir una estrategia simple como **Alpha Chill** hubo que editar **9 archivos** grandes y coordinar 4 capas (motor, servicio, API, Telegram, UI monolítica). Cuanto más código muerto convive en el mismo flujo, mayor es el riesgo de regresiones involuntarias cuando se toque algo para dinero real.
 
 ---
 
-## Diagnóstico Directo: ¿Qué es lo mejor y qué es lo único que frena el salto a real?
+## 3. Qué NO Está Roto (para no sobrerreaccionar)
 
-### Lo mejor del bot hoy
-1. **No opera por intuición ni ruido:** solo quedan encendidas las dos únicas estrategias que pasaron el filtro duro de costes + bloques temporales, separadas entre sí.
-2. **Escudo pre-orden a prueba de trampas conocidas:** ya demostró en vivo bloquear clusters Sybil, ballenas `>= 8%` y tokens con `>= 15` insiders (como el primer candidato de Alpha Chill `$PI`, bloqueado al instante).
-3. **Resiliencia operativa:** 4 servicios aislados, reinicio limpio con persistencia de historial/vetos y monitorización 24/7 sin intervención manual.
+- **No contamina los resultados actuales:** `libro_d` (Alpha Sniper) y `libro_e` (Alpha Chill) están 100 % aislados y verificados (`96/96` tests).
+- **No está tirando el servidor:** los 4 servicios llevan horas estables (`active`), sin OOM ni errores en logs.
 
-### Los 3 pasos exactos para llevarlo de `7.6` a `9.0+` (listo para dinero real)
-1. **Completar validación en vivo (`100 ops` en Alpha Sniper y `100 ops` en Alpha Chill)** sin tocar reglas en mitad de la prueba.
-2. **Limpiar la deuda técnica heredada:** desacoplar el motor antiguo V4.5/V3 del bucle de `decu2paper` para bajar RAM, latencia y complejidad.
-3. **Piloto en dinero real con micro-capital (`0.02 – 0.05 SOL/op`)** durante 30–50 ops solo para medir el **slippage real vs paper**, la tasa de fills de Jito y la reconciliación on-chain antes de escalar tamaño.
+---
+
+## 4. Plan Recomendado (Sin Prisas y Sin Romper la Prueba Actual)
+
+1. **Ahora (en mitad de las 100 ops de validación):** NO tocar el núcleo de `decu2paper` salvo necesidad, para mantener limpia la muestra en vivo de `Alpha Sniper` y `Alpha Chill`.
+2. **Al completar la validación (o si decides hacerlo en paralelo antes de dinero real):**
+   - **Fase 1 (rápida, impacto inmediato en CPU/RAM):** añadir un modo `DECU2_V46_LIGERO=1` que salte `V4.5`, `pipeline_2b` heredado y los 7 modelos `TIPO A/B` cuando solo corran `TIPO_D`/`TIPO_E` (reduce ~80 % CPU y RAM sin borrar nada todavía).
+   - **Fase 2 (antes de dinero real):** archivar `core/` v1, `V4.5` y estrategias retiradas fuera del paquete activo, y modularizar `decu2-ui.js` y `motor_quant_alpha_v46.py`.
 
 ---
 
 ## Historial de informes
 
+- [`2026-11-24_1354_auditoria_limpieza_y_deuda_tecnica.md`](informes/2026-11-24_1354_auditoria_limpieza_y_deuda_tecnica.md) — Auditoría de Limpieza de Código y Deuda Técnica Actual (DECU 2.0)
 - [`2026-11-24_1343_evaluacion_estructura_bot_decu.md`](informes/2026-11-24_1343_evaluacion_estructura_bot_decu.md) — Auditoría y Nota Global de la Estructura Actual de DECU 2.0 (V4.6)
 - [`2026-11-24_1252_integracion_alpha_chill.md`](informes/2026-11-24_1252_integracion_alpha_chill.md) — Integración en Producción (Paper): Alpha Chill (`TIPO_E`)
 - [`2026-11-24_1227_examen_alpha_absorption_15.md`](informes/2026-11-24_1227_examen_alpha_absorption_15.md) — Examen en Datos Reales · «Alpha Absorption 15» (`+14%–15%` bruto · 23 sesiones reales)
