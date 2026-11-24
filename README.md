@@ -1,114 +1,73 @@
-<!-- AUTO-ACTUALIZADO: último informe publicado el 2026-11-24 18:37 UTC -->
-> **Último informe:** [`informes/2026-11-24_1837_auditoria_paper_vs_mainnet_real.md`](informes/2026-11-24_1837_auditoria_paper_vs_mainnet_real.md) · *Actualizado: 2026-11-24 18:37 UTC*
+<!-- AUTO-ACTUALIZADO: último informe publicado el 2026-11-24 19:09 UTC -->
+> **Último informe:** [`informes/2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md`](informes/2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md) · *Actualizado: 2026-11-24 19:09 UTC*
 
-# Auditoría Forense: Paper Trading vs Capital Real en Solana Mainnet (`60–80 €`)
+# Laboratorio Cuantitativo V2: Caché Ultrarrápido, Juez Mainnet Anti-Overfitting y Monte Carlo (`80 €`)
 
 **Fecha:** 2026-11-24  
-**Objetivo:** Responder con datos reales si los beneficios del simulador Paper se mantienen al pasar a capital real (`60–80 €` ≈ `1.0–1.25 SOL`, órdenes de `0.14 SOL` ≈ `9 €`), inyectando las fricciones reales de Solana Mainnet tick a tick sobre **313 operaciones históricas reales (15 días, 92 segmentos)** y las **44 operaciones reales en vivo** de producción.
+**Alcance:** 100 % local (`decu2/laboratorio_v5/`), con paridad 1:1 respecto al simulador Mainnet Real activo en producción (`servidor`).
 
 ---
 
-## 1. Conclusión Brutalmente Honesta
+## 1. Mejoras Implementadas en el Laboratorio V2
 
-**No: con dinero real NO ganas lo mismo que en Paper.**  
-Dependiendo de la calidad de tu ejecución y la congestión de la red Solana, en Mainnet retienes aproximadamente:
-
-- **Escenario Mainnet realista** (`+1.5s` latencia real + Jito tip + reverts reales + `0.5%` MEV + cierre automático ATA): **`~69% – 88%`** del beneficio del Paper.
-- **Escenario Mainnet estricto ("Ley de Murphy")** (nunca te favorece la latencia + `0.5%` MEV + reverts): **`~26% – 39%`** del beneficio del Paper.
-- **Escenario congestión brutal** (`+2.5s` adverso + `1.0%` MEV + tips 2×): **V4.6 clásica y Alpha Chill entran en pérdidas**; **solo Quantum V5.0 Runner sobrevive en positivo (`PF 1.13x`)**.
-
-> **Veredicto práctico:** Alpha Sniper (**V5.0 Runner** y **V4.6+Escudo**) **SÍ mantienen ventaja positiva en dinero real**, siempre que se ejecuten con **Jito + cierre automático de ATA + órdenes de `0.12–0.14 SOL`**. En cambio, **Alpha Chill (`TIPO_E`) NO tiene suficiente margen por operación** para sobrevivir a fricción estricta de Mainnet (`PF 0.91x`) y **no debería usarse con capital real**.
+1. **Caché binario CSR (`cache_trayectorias.py`):** pre-indexa los `92` segmentos reales (`197` mints, `276,838` ticks AMM, `5.26 MB`). Acelera cada benchmark completo de **`57s` → `0.77s` (74× más rápido)** y se reconstruye automáticamente solo cuando lleguen segmentos nuevos.
+2. **Juez Mainnet + Guardián Anti-Overfitting (`juez_mainnet.py`):** usa exactamente `evaluar_fill_compra_mainnet` y `evaluar_fill_venta_mainnet` del motor vivo, evalúa **5 escenarios obligatorios** (`paper_clasico`, `mainnet_realista`, `mainnet_estricto`, `mainnet_congestion`, `mainnet_sin_ata`), separa **Holdout Temporal Ciego (último 20%)** y exige significancia bootstrap con corrección por múltiples ensayos.
+3. **Simulador Monte Carlo (`montecarlo_cuenta.py`):** 10.000 caminos vectorizados para cuenta pequeña (`80 € = 1.25 SOL`, horizonte 30 días), comparando tamaño fijo (`0.08–0.18 SOL`) vs compuesto (`12%–15%`).
+4. **Verificador de Deriva Vivo vs Lab (`auditor_deriva_vivo.py`):** lee `servidor` (solo lectura, `DECU2_NO_TELEGRAM=1`) y compara las operaciones cerradas tras el corte Mainnet Real (`2026-11-24 18:58 UTC`: op `#46+` V4.6 / `#4+` V5.0) contra el laboratorio.
+5. **CLI unificado (`python -m decu2.laboratorio_v5.cli_lab`)** y **41/41 tests unitarios en verde**.
 
 ---
 
-## 2. Qué cobra el Paper actual vs qué te cobra Solana Mainnet
+## 2. Veredicto del Juez Mainnet (`0.14 SOL` · 15 días reales · ejecutado en `0.77s`)
 
-| Fricción | Paper actual (producción) | Solana Mainnet real (`0.14 SOL/op`) |
-|---|---|---|
-| **Gas + Priority + Jito** | `0.00015 SOL/tx` (`0.0003/op`) | `0.00070 SOL/tx` (`0.0014–0.0021/op`, **5×–7× más**) |
-| **Fee AMM PumpSwap** | `0.25%` por lado | `0.30%` por lado (`0.25%` LP + `0.05%` protocol) |
-| **Latencia de inclusión** | `0.0s` (precio exacto de señal) | `+1.0s` a `+1.5s` normal (`+2.5s` en congestión) |
-| **Reverts en compra** | `0` | **`16% – 19%`** de señales se escapan `> +3.5%` (pierdes priority fee y pierdes la entrada) |
-| **Reverts en venta SL/Rug** | `0` | **`28 – 40`** reintentos en 15d (`+1.5s` extra cayendo + gas doble) |
-| **MEV / Sandwich** | `0%` | `+0.5%` a `+1.0%` por lado si no usas Jito privado |
-| **Alquiler cuenta ATA** | `0 SOL` | **`-0.002039 SOL` por token** si no cierras la cuenta al vender el 100% |
+| Estrategia | Veredicto Guardián | Mainnet Realista (`+1.5s`, Jito, `0.5%` MEV) | Mainnet Estricto (Ley de Murphy) | Holdout Ciego (último 20% tiempo) |
+|---|---|---|---|---|
+| **V4.6 Alpha Sniper + Escudo ML** (`143` ops) | **APROBADA** | `+2.589 SOL (+166 €)`, PF `2.42x` (`nb 1.94x`), `p=0.0085`, DD `14.5%` | `+0.983 SOL (+63 €)`, PF `1.47x` (`nb 1.05x`), DD `36.8%` | **Realista `+1.292 SOL` (`PF 4.23x`) · Estricto `+1.233 SOL` (`PF 3.77x`)** |
+| **Quantum V5.0 Runner** (`75` ops) | **RECHAZADA** *(fallo holdout 15 ops)* | `+1.677 SOL (+107 €)`, PF `2.58x` (`nb 1.99x`), `p=0.0230`, DD `7.6%` | `+0.471 SOL (+30 €)`, PF `1.42x` (`nb 1.09x`), DD `21.4%` | Realista `-0.139 SOL` (`PF 0.55x`) · Estricto `-0.155 SOL` (`PF 0.52x`) |
+| **Alpha Chill (`TIPO_E`)** (`95` ops) | **RECHAZADA** | `+0.015 SOL (+1 €)`, PF `1.02x` (`nb 0.86x`), `p=0.4950` | **`-0.553 SOL (-35 €)`**, PF `0.48x` | Realista `+0.048 SOL` · Estricto `-0.025 SOL` |
+
+> **Hallazgo crítico del guardián:** el filtro `p_win >= 0.50` de V5.0 recortó ganadores grandes en el último 20% de los días (`15` ops en holdout frente a `29` de V4.6+Escudo). Las 2 semanas en vivo en modo Mainnet Real comparando ambos motores en paralelo resolverán esta diferencia con datos 100 % nuevos.
 
 ---
 
-## 3. Simulación Tick a Tick en 15 Días Reales (`80 € = 1.25 SOL`, orden `0.14 SOL`)
+## 3. Monte Carlo — 10.000 Caminos para Cuenta de `80 €` (`1.25 SOL`, 30 días)
 
-Tipo de cambio de referencia: `1 SOL ≈ 64 €`.
+### A) Bajo Mainnet REALISTA (`+1.5s` real + Jito + `0.5%` MEV + ATA cerrado)
 
-### A) V4.6 Alpha Sniper + Escudo ML V5 (`143` ops · salida clásica)
-
-| Escenario | Ejecutadas (revB / revS) | WR | PF (sin mejor) | PnL 15d | % del Paper | Fees fijos | Max DD |
+| Estrategia y Sizing | P5 (mala racha) | Mediana (30d) | P95 (buena racha) | P(ganar) | P(2× cuenta) | P(DD ≥ 25%) | P(quiebra <0.30 SOL) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **0. Paper actual** (`0s`, gas `0.00015`) | 143 (0 / 0) | 50.3% | 2.79x (2.18x) | **+2.674 SOL (+171 €)** | 100.0% | 0.051 | 19.2% |
-| **1. Mainnet realista** (`+1.5s` real + Jito + reverts + `0.5%` MEV + ATA ok) | 120 (23 / 40) | 46.7% | 2.42x (1.94x) | **+2.589 SOL (+166 €)** | 96.8% | 0.221 | 14.5% |
-| **2. Mainnet estricto** (`+1.5s` adverso + `0.5%` MEV + ATA ok) | 120 (23 / 40) | 45.0% | 1.49x (1.07x) | **+1.019 SOL (+65 €)** | 38.1% | 0.218 | 36.3% |
-| **3. Mainnet estricto SIN cerrar ATA** | 120 (23 / 40) | 43.3% | 1.35x (0.96x) | **+0.774 SOL (+50 €)** | 28.9% | 0.462 | 41.2% |
-| **4. Mainnet congestión brutal** (`+2.5s` adverso + `1.0%` MEV + tip 2×) | 114 (29 / 36) | 37.7% | **0.82x** (0.70x) | **-0.418 SOL (-27 €)** | -15.6% | 0.381 | 56.4% |
+| **V4.6+Escudo · Fijo `0.10 SOL`** | `182 €` | `305 € (+225 €)` | `455 €` | `99.9%` | `97.6%` | `10.2%` | `0.01%` |
+| **V4.6+Escudo · Fijo `0.12 SOL`** | `207 €` | `355 € (+275 €)` | `535 €` | `99.9%` | `98.6%` | `14.7%` | `0.04%` |
+| **V4.6+Escudo · Fijo `0.14 SOL`** | `232 €` | `405 € (+325 €)` | `615 €` | `99.9%` | `99.1%` | `19.4%` | `0.09%` |
+| **V5.0 Runner · Fijo `0.10 SOL`** | `135 €` | `226 € (+146 €)` | `334 €` | `99.8%` | `87.5%` | `9.5%` | `0.00%` |
+| **V5.0 Runner · Fijo `0.12 SOL`** | `149 €` | `258 € (+178 €)` | `387 €` | `99.8%` | `92.6%` | `14.4%` | `0.04%` |
+| **V5.0 Runner · Fijo `0.14 SOL`** | `163 €` | `290 € (+210 €)` | `441 €` | `99.8%` | `95.3%` | `19.1%` | `0.09%` |
 
-### B) Quantum V5.0 Sniper Runner (`75` ops · Moonbag `50%` / `4h`)
+### B) Bajo Mainnet ESTRICTO ("Ley de Murphy": nunca te favorece la latencia)
 
-| Escenario | Ejecutadas (revB / revS) | WR | PF (sin mejor) | PnL 15d | % del Paper | Fees fijos | Max DD |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **0. Paper actual** (`0s`, gas `0.00015`) | 75 (0 / 0) | 57.3% | 3.69x (3.12x) | **+1.910 SOL (+122 €)** | 100.0% | 0.027 | 4.1% |
-| **1. Mainnet realista** (`+1.5s` real + Jito + reverts + `0.5%` MEV + ATA ok) | 61 (14 / 28) | 50.8% | 2.58x (1.99x) | **+1.676 SOL (+107 €)** | 87.8% | 0.117 | 7.6% |
-| **2. Mainnet estricto** (`+1.5s` adverso + `0.5%` MEV + ATA ok) | 61 (14 / 28) | 50.8% | 1.45x (1.11x) | **+0.490 SOL (+31 €)** | 25.6% | 0.115 | 20.9% |
-| **3. Mainnet estricto SIN cerrar ATA** | 61 (14 / 28) | 47.5% | 1.31x (1.00x) | **+0.365 SOL (+23 €)** | 19.1% | 0.240 | 24.5% |
-| **4. Mainnet congestión brutal** (`+2.5s` adverso + `1.0%` MEV + tip 2×) | 61 (14 / 25) | 44.3% | **1.13x** (0.84x) | **+0.157 SOL (+10 €)** | 8.2% | 0.211 | 27.7% |
-
-> **Por qué V5.0 resiste mejor que V4.6 en dinero real:** hace la mitad de operaciones (`75` vs `143`), paga la mitad de gas/reverts (`0.117` vs `0.221 SOL`), tiene un **Drawdown casi a la mitad** (`7.6%–20.9%` vs `14.5%–36.3%`) y es la **única que aguanta en positivo en congestión extrema**.
-
-### C) Alpha Chill (`TIPO_E`, `95` ops · entrada tranquila) — NO APTA PARA REAL
-
-| Escenario | Ejecutadas | WR | PF (sin mejor) | PnL 15d | % del Paper | Max DD |
+| Estrategia y Sizing | P5 (mala racha) | Mediana (30d) | P95 | P(ganar) | P(DD ≥ 25%) | P(quiebra <0.30 SOL) |
 |---|---:|---:|---:|---:|---:|---:|
-| **0. Paper actual** | 95 | 44.2% | 1.66x (1.23x) | +0.630 SOL (+40 €) | 100.0% | 13.2% |
-| **1. Mainnet exacto** (`+1.5s` real + Jito) | 84 | 39.3% | 1.40x (1.02x) | +0.421 SOL (+27 €) | 66.8% | 22.7% |
-| **2. Mainnet estricto** (`+1.5s` adverso + `0.5%` MEV) | 84 | 29.8% | **0.91x** (0.60x) | **-0.106 SOL (-7 €)** | -16.9% | 42.2% |
-| **3. Mainnet estricto SIN cerrar ATA** | 84 | 28.6% | **0.80x** (0.51x) | **-0.278 SOL (-18 €)** | -44.0% | 52.7% |
+| **V4.6+Escudo · Fijo `0.10 SOL`** | `53 €` | `157 € (+77 €)` | `282 €` | `89.1%` | `56.3%` | `2.47%` |
+| **V4.6+Escudo · Fijo `0.12 SOL`** | `44 €` | `178 € (+98 €)` | `328 €` | `89.6%` | `63.0%` | `3.86%` |
+| **V4.6+Escudo · Fijo `0.14 SOL`** | `19 €` | `198 € (+118 €)` | `373 €` | `89.5%` | `68.4%` | `5.62%` |
+| **V5.0 Runner · Fijo `0.10 SOL`** | `59 €` | `117 € (+37 €)` | `185 €` | `84.7%` | `41.2%` | **`0.53%`** |
+| **V5.0 Runner · Fijo `0.12 SOL`** | `57 €` | `127 € (+47 €)` | `208 €` | `86.2%` | `50.1%` | **`1.21%`** |
+| **V5.0 Runner · Fijo `0.14 SOL`** | `53 €` | `138 € (+58 €)` | `232 €` | `86.8%` | `57.2%` | `2.21%` |
+
+> **Conclusión de gestión de capital:** con `80 €`, empezar con tamaño fijo **`0.10–0.12 SOL` (`~6.5–7.5 €`)** protege mucho mejor la cuenta frente a malas rachas (`P(quiebra) < 1.2%–2.5%` incluso en Ley de Murphy). El modo compuesto (`12%`) solo conviene activarlo cuando la cuenta supere `150–200 €`.
 
 ---
 
-## 4. Auditoría de las 44 Operaciones REALES en Vivo (`servidor`)
+## 4. Primer Chequeo de Deriva Vivo (`servidor`, 10 min tras activar Mainnet Real)
 
-Sobre las **44 operaciones cerradas en vivo** de V4.6 Alpha Sniper (`operaciones_d`, `0.15 SOL/op`, `WR 43.2%`, `PF 1.73x`, `PnL +0.4290 SOL`), reescaladas a tu capital (`0.14 SOL/op`):
-
-| Escenario sobre las 44 ops vivas | PnL neto | En euros | Profit Factor | % del Paper |
-|---|---:|---:|---:|---:|
-| **Paper vivo** (reescalado a `0.14 SOL`) | `+0.4004 SOL` | `+26 €` | `1.73x` | 100.0% |
-| **Mainnet realista** (`+0.0014` gas Jito + `1.0%` MEV/latencia) | `+0.2772 SOL` | `+18 €` | `1.45x` | **69.2%** |
-| **Mainnet estricto** (`+0.0014` gas Jito + `3.0%` fricción adversa) | `+0.1540 SOL` | `+10 €` | `1.22x` | **38.5%** |
-| **Mainnet realista SIN cerrar ATA** (`-0.0897 SOL` perdidos en rent) | `+0.1875 SOL` | `+12 €` | `1.28x` | **46.8%** |
-
----
-
-## 5. Tamaño de Orden Óptimo para `60–80 €` (`1.0–1.25 SOL`)
-
-Bajo **Mainnet Estricto** (`+1.5s` adverso + `0.5%` MEV + Jito + ATA cerrado):
-
-| Tamaño por orden | Gas fijo / orden | V4.6+Escudo (15d) | V5.0 Runner (15d) | Veredicto |
-|---:|---:|---|---|---|
-| `0.04 SOL` (`2.6 €`) | **3.50%** | `+0.144 SOL` (`+9 €`, PF `1.21x`, nb `0.85x`) | `+0.062 SOL` (`+4 €`, PF `1.17x`, nb `0.88x`) | **NO operar** (gas se come la ventaja) |
-| `0.08 SOL` (`5.1 €`) | `1.75%` | `+0.499 SOL` (`+32 €`, PF `1.40x`, nb `1.00x`) | `+0.235 SOL` (`+15 €`, PF `1.36x`, nb `1.04x`) | Mínimo viable |
-| **`0.14 SOL` (`9.0 €`)** | **`1.00%`** | **`+1.019 SOL` (`+65 €`, PF `1.49x`, nb `1.07x`, DD `36%`)** | **`+0.490 SOL` (`+31 €`, PF `1.45x`, nb `1.11x`, DD `21%`)** | **Punto dulce para `60–80 €`** |
-| `0.25 SOL` (`16.0 €`) | `0.56%` | `+1.932 SOL` (`+124 €`, DD **`62.5%`**) | `+0.937 SOL` (`+60 €`, DD `26.6%`) | Demasiado riesgo por trade en `80 €` |
-
----
-
-## 6. Las 4 Reglas Obligatorias Antes de Poner 1 € Real
-
-1. **Cierre automático de ATA (`ata_manager.py`):** sin esto regalas `0.002039 SOL` por moneda (`~8–16 €` cada 15 días), suficiente para matar el Profit Factor sin el mejor trade.
-2. **Jito bundles privados:** evitan los sandwich bots (`0.5%–1.0%` por lado) y aceleran la inclusión de SL/Rug para evitar el escenario de congestión `+2.5s`.
-3. **Tamaño fijo `0.12–0.14 SOL` (`~8–9 €`) con máximo 2 posiciones simultáneas:** nunca bajar de `0.08 SOL` ni superar `0.16 SOL` con capital de `60–80 €`.
-4. **Solo Alpha Sniper (`V5.0 Runner` prioritario, `V4.6+Escudo` secundario):** NO meter capital real en `Alpha Chill` (`TIPO_E`).
+El verificador `cli_lab deriva` ya confirmó la **primera operación cerrada en vivo bajo Mainnet Real** (`V4.6 op #46`):
+- Ejecutó con latencia `+1.5s`, **sufrió 1 revert real en venta**, reintentó pagando `+0.0003 SOL` extra (`gas_tx_total = 0.0017 SOL`, comisión total `0.00254 SOL`) y **ahorró `0.002039 SOL`** cerrando el ATA. Estado: `OK`.
 
 ---
 
 ## Historial de informes
 
+- [`2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md`](informes/2026-11-24_1909_laboratorio_v2_mainnet_y_montecarlo.md) — Laboratorio Cuantitativo V2: Caché Ultrarrápido, Juez Mainnet Anti-Overfitting y Monte Carlo (`80 €`)
 - [`2026-11-24_1837_auditoria_paper_vs_mainnet_real.md`](informes/2026-11-24_1837_auditoria_paper_vs_mainnet_real.md) — Auditoría Forense: Paper Trading vs Capital Real en Solana Mainnet (`60–80 €`)
 - [`2026-11-24_1824_seguimiento_alpha_sniper_y_chill.md`](informes/2026-11-24_1824_seguimiento_alpha_sniper_y_chill.md) — Seguimiento Automático (4h) · Alpha Sniper & Alpha Chill + QUANTUM V5.0
 - [`2026-11-24_1452_quantum_v5_auditoria_9_87m_y_entrenamiento.md`](informes/2026-11-24_1452_quantum_v5_auditoria_9_87m_y_entrenamiento.md) — QUANTUM V5.0 — Auditoría Forense, Inventario de 9.87M Registros, Benchmark de 12 Arquitecturas y Validación en Holdout Intocable
